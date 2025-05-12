@@ -1,1 +1,4 @@
+# MacOS DS_Store file
 .DS_Store
+# Large reference files
+data/reference/genome/
