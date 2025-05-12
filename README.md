@@ -6,6 +6,17 @@
 - Reference genome in FASTA format
   - For human hg38: Download from [UCSC](https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz)
 
+
+
+## Quick Start
+
+# Clone the repository
+git clone https://github.com/yourusername/genTile.git
+cd genTile
+
+# Run directly from the bin directory
+./bin/get_sequence.sh --gene TP53 --genome /path/to/genome.fa --distance 2000
+
 ## Usage
 
 ```bash
