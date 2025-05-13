@@ -31,3 +31,9 @@ tmp/
 # Local configuration
 .env
 *.local
+
+#Output files
+output/*
+!output/.gitkeep
+test/output/*
+!test/output/.gitkeep
