@@ -1,4 +1,33 @@
 # MacOS DS_Store file
 .DS_Store
+
 # Large reference files
 data/reference/genome/
+data/reference/flashfry_db/
+
+# External tools
+external/
+
+# Temporary files
+tmp/
+*.tmp
+
+# FlashFry output files
+*.output
+*.scored
+
+# Log files
+*.log
+
+# Java files
+*.class
+*.jar
+
+# Backup files
+*~
+*.bak
+*.swp
+
+# Local configuration
+.env
+*.local

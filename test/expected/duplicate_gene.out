@@ -1,0 +1,6 @@
+Error: Ambiguous gene name: WASH7P
+This gene name is associated with multiple ENSEMBL IDs:
+  - ENSG00000310526 (chr1:30744 - lncRNA)
+  - ENSG00000227232 (chr1:24886 - transcribed_unprocessed_pseudogene)
+Please use a specific ENSEMBL ID instead to avoid ambiguity.
+Error: No valid regions found for any of the input genes
