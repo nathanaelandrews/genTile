@@ -12,11 +12,11 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 REPO_DIR="$( dirname "$SCRIPT_DIR" )"
 
 # Default values for parameters
-DEFAULT_OUTPUT="guides.scored.txt"
-DEFAULT_DATABASE="$REPO_DIR/data/reference/flashfry_db/hg38_spcas9ngg19.db"
+DEFAULT_OUTPUT="output/guides.scored.txt"
+DEFAULT_DATABASE="$REPO_DIR/data/reference/flashfry_db/hg38_spcas9ngg.db"
 DEFAULT_FLASHFRY="$REPO_DIR/external/flashfry/FlashFry-assembly-1.15.jar"
 DEFAULT_JAVA_MEMORY="4G"
-DEFAULT_SCORING_METRICS="dangerous,minot,reciprocalofftargets"
+DEFAULT_SCORING_METRICS="doench2016cfd,dangerous,minot,hsu2013,doench2014ontarget"
 
 # Help/usage function to display available options
 show_usage() {
@@ -188,6 +188,22 @@ verbose "  FlashFry JAR: $FLASHFRY"
 verbose "  Java Memory: $JAVA_MEMORY"
 verbose "  Discover Args: $DISCOVER_ARGS"
 verbose "  Score Args: $SCORE_ARGS"
+
+# Create output directory if it doesn't exist
+OUTPUT_DIR=$(dirname "$OUTPUT")
+if [ ! -d "$OUTPUT_DIR" ]; then
+  verbose "Creating output directory: $OUTPUT_DIR"
+  mkdir -p "$OUTPUT_DIR" || { echo "Error: Failed to create output directory: $OUTPUT_DIR"; exit 1; }
+fi
+
+# Also check for the intermediate output's directory if it's being kept
+if [ -n "$KEEP_INTERMEDIATE" ]; then
+  INTERMEDIATE_DIR=$(dirname "$KEEP_INTERMEDIATE")
+  if [ ! -d "$INTERMEDIATE_DIR" ]; then
+    verbose "Creating intermediate output directory: $INTERMEDIATE_DIR"
+    mkdir -p "$INTERMEDIATE_DIR" || { echo "Error: Failed to create intermediate output directory: $INTERMEDIATE_DIR"; exit 1; }
+  fi
+fi
 
 # Step 1: Run FlashFry discover
 verbose "Starting FlashFry discover step..."

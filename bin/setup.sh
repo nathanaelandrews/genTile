@@ -6,7 +6,7 @@ REPO_DIR="$( dirname "$SCRIPT_DIR" )"
 
 # Default values
 DEFAULT_MEMORY="4G"
-DEFAULT_ENZYME="spcas9ngg19"  # CRISPRi default
+DEFAULT_ENZYME="spcas9ngg"  # CRISPRi default
 
 # Help function
 show_usage() {
@@ -65,6 +65,24 @@ TMP_DIR="$REPO_DIR/tmp"
 # Create directories
 mkdir -p "$DATABASE_DIR"
 mkdir -p "$TMP_DIR"
+mkdir -p "$REPO_DIR/external/flashfry"
+
+# Check if FlashFry JAR exists
+FLASHFRY_JAR="$REPO_DIR/external/flashfry/FlashFry-assembly-1.15.jar"
+if [ ! -f "$FLASHFRY_JAR" ]; then
+  echo "FlashFry JAR not found. Downloading..."
+  wget -O "$FLASHFRY_JAR" https://github.com/mckennalab/FlashFry/releases/download/1.15/FlashFry-assembly-1.15.jar
+  
+  if [ $? -eq 0 ]; then
+    echo "FlashFry downloaded successfully!"
+  else
+    echo "Error: Failed to download FlashFry. Please download manually:"
+    echo "wget -O $FLASHFRY_JAR https://github.com/mckennalab/FlashFry/releases/download/1.15/FlashFry-assembly-1.15.jar"
+    exit 1
+  fi
+else
+  echo "FlashFry JAR already exists at: $FLASHFRY_JAR"
+fi
 
 # Validate enzyme choice
 valid_enzymes=("spcas9ngg19" "spcas9ngg" "spcas9nag" "cpf1" "spcas9")

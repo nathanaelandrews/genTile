@@ -1,141 +1,259 @@
 # genTile
 
-A tool for designing optimally spaced CRISPR guide libraries for precise dosage modulation across gene targets. Primarily intended for internal use in the Lappalainen lab.
+A tool for designing optimally spaced CRISPR guide libraries for precise dosage modulation across gene targets.
 
 ## Overview
 
-genTile extracts sequences upstream of gene transcription start sites (TSS) and prepares them for CRISPR guide design. This tool aims to facilitate tiling of guides for CRISPRi/a applications with specific spacing to modulate effect size for dosage studies.
-
-## Features
-
-- Extract sequences upstream of gene TSS with customizable distance
-- Support for both gene symbols and ENSEMBL IDs
-- Handle single genes or batch processing from files
-- Automatic disambiguation of duplicate gene names
-- Strand-aware sequence extraction
-- Output in FASTA format ready for guide design
+genTile is a pipeline, primarily intended for internal use in the Lappalainen lab, for designing CRISPR guide RNAs with optimal spacing for CRISPRi/a applications. It extracts sequences from target genomic regions, designs candidate guides, and selects high-scoring guides with appropriate spacing for effective tiling. 
 
 ## Requirements
 
-### Dependencies
-
-- **Bash** (version 4.0+)
-- **bedtools** (must be in your PATH)
-- **Reference genome** in FASTA format
-
-### Genome Data
-
-genTile currently works with human genome hg38, which can be downloaded from UCSC:
-- For human hg38: Download from [UCSC](https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz)
-
-After downloading:
-```bash
-# Uncompress the genome
-gunzip hg38.fa.gz
-
-# Create an index file (recommended)
-samtools faidx hg38.fa
-# OR
-bedtools index -f hg38.fa
-```
+- Bash (4.0+)
+- bedtools
+- Java (for FlashFry)
+- Reference genome (currently only supports hg38)
 
 ## Installation
 
 ```bash
-# Clone the repository
 git clone https://github.com/nathanaelandrews/genTile.git
 cd genTile
-
-# Verify bedtools is installed
-bedtools --version
+./bin/setup.sh
 ```
 
-No additional installation is required. All scripts can be run directly from the bin directory.
+You'll need the hg38 reference genome. If you don't already have it, you can download it and place it in the expected location:
+
+```bash
+mkdir -p data/reference/genome/hg38
+wget -O data/reference/genome/hg38/hg38.fa.gz https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz
+gunzip data/reference/genome/hg38/hg38.fa.gz
+```
+
+Alternatively, you can use an existing reference genome by specifying its path when running the scripts.
+
+### Setup Process
+
+The setup script:
+- Downloads FlashFry (if not already installed)
+- Creates a FlashFry database for guide design 
+
+The database creation is the most time-consuming step of setup:
+This is a one-time process (per enzyme); the database is then reused for all future guide designs
+The FlashFry database for a full human genome is around 2.5 Gb
+
+### Setup Options
+
+- `-m, --memory <size>`: Java heap memory allocation for database creation (default: 4G)
+  - For full human genome database, recommend 16G+ if available
+  - Examples: `-m 16G`, `-m 32G`
+
+- `-e, --enzyme <enzyme>`: CRISPR enzyme to use (default: spcas9ngg)
+  - Options: spcas9ngg (standard Cas9), spcas9ngg19 (CRISPRi), spcas9nag, cpf1
+  - Example: `-e spcas9ngg` 
+
+## Complete Workflow Example
+
+Here's a complete example workflow using the example gene list:
+
+```bash
+# Step 1: Extract sequences for target genes
+./bin/get_sequence.sh -i examples/input/test_genes.txt -r data/reference/genome/hg38/hg38.fa -v
+
+# Step 2: Design guides using FlashFry
+./bin/design_guides.sh -i output/sequences.fa -v
+
+# Step 3: Select optimal guides with 50bp exclusion zones
+./bin/select_guides.sh -i output/guides.scored.txt -v
+
+# Results will be in:
+# - output/selected_guides.txt (Full guide details)
+# - output/selected_guides.bed (For visualization in genome browsers)
+```
 
 ## Usage
 
-### Basic Usage
+The pipeline consists of three main steps:
+
+### 1. Extract Sequences: get_sequence.sh
+
+The `get_sequence.sh` script extracts genomic sequences around gene transcription start sites (TSS). It accepts either a single gene or a file containing multiple genes, and retrieves the specified upstream and downstream regions around each gene's TSS.
+
+#### Features
+
+- Supports both gene symbols and Ensembl IDs
+- Handles single genes or batch processing from files
+- Produces strand-aware sequences (reverse-complemented for negative strand)
+- Outputs in FASTA format 
+- Currently selects TSS based on Gencode v47
+
+#### Usage
 
 ```bash
-./bin/get_sequence.sh -i GENE -r /path/to/genome.fa
+./bin/get_sequence.sh -i <gene|file> -r <reference_genome> [options]
 ```
 
-### Options
+#### Options
 
-```
-Options:
-  -i, --input <gene|file>  Gene name/ID or file with gene names (required)
-  -r, --reference <file>   Path to reference genome FASTA (required)
-  -d, --distance <bp>      Distance upstream of TSS (default: 2000)
-  -o, --output <file>      Output file (default: stdout)
-  -v, --verbose            Show detailed progress
-  -h, --help               Show this help message
-```
+- `-i, --input <gene|file>`: Gene name/ID or file with gene names (required)
+- `-r, --reference <file>`: Path to reference genome FASTA (required)
+- `-u, --upstream <bp>`: Distance upstream of TSS (default: 1500)
+- `-d, --downstream <bp>`: Distance downstream of TSS (default: 500)
+- `-o, --output <file>`: Output file (default: "output/sequences.fa")
+- `-v, --verbose`: Show detailed progress
+- `-h, --help`: Show this help message
 
-### Examples
+#### Examples
 
-Extract 1000bp upstream of TP53:
+Extract 1500bp upstream and 500bp downstream (default range) of 5 example genes:
 ```bash
-./bin/get_sequence.sh -i TP53 -r /path/to/hg38.fa -d 1000
+./bin/get_sequence.sh -i examples/input/test_genes.txt -r path/to/hg38.fa
 ```
 
-Process multiple genes from a file:
+#### Output Format
+
+The script produces FASTA format output with headers containing gene name, chromosome, start-end coordinates, and strand.
+
+
+### 2. Design Guides: design_guides.sh
+
+The `design_guides.sh` script uses FlashFry to identify and score potential CRISPR guide RNAs from input sequences. It handles both the discovery and scoring steps of guide design with sensible defaults while allowing extensive customization.
+
+#### Features
+
+- Automated discovery and scoring of candidate guides in one step
+- Uses FlashFry for comprehensive off-target analysis
+- Multiple scoring metrics to evaluate guide quality and specificity
+
+#### Usage
+
 ```bash
-echo -e "TP53\nBRCA1\nPTEN" > genes.txt
-./bin/get_sequence.sh -i genes.txt -r /path/to/hg38.fa -d 2000 -o sequences.fa
+./bin/design_guides.sh -i <sequences.fa> [options]
 ```
 
-Use ENSEMBL ID for ambiguous gene names:
+#### Options
+
+##### Required Options:
+- `-i, --input <file>`: Input FASTA file with target sequences
+
+##### Common Options:
+- `-o, --output <file>`: Output file for scored guides (default: output/guides.scored.txt)
+- `-d, --database <path>`: Path to FlashFry database (default: repository database)
+- `-f, --flashfry <path>`: Path to FlashFry JAR file (default: repository JAR)
+- `-m, --java-memory <size>`: Java heap memory size (default: 4G)
+- `-v, --verbose`: Show detailed progress information
+- `-h, --help`: Show this help message
+
+##### Advanced Options:
+- `--discover-args "<args>"`: Additional arguments to pass to FlashFry discover step (see FlashFry documentation: https://github.com/mckennalab/FlashFry)
+- `--score-args "<args>"`: Additional arguments to pass to FlashFry score step (see FlashFry documentation: https://github.com/mckennalab/FlashFry)
+- `--keep-intermediate <file>`: Keep the intermediate discovery output file
+
+#### Examples
+
+Basic usage with defaults:
 ```bash
-./bin/get_sequence.sh -i ENSG00000141510 -r /path/to/hg38.fa -d 1500
+./bin/design_guides.sh --input output/sequences.fa
 ```
 
-Show detailed progress:
+Custom output file:
 ```bash
-./bin/get_sequence.sh -i TP53 -r /path/to/hg38.fa -v
+./bin/design_guides.sh --input sequences.fa --output my_guides.txt
 ```
 
-### Output Format
+#### Output Format
 
-The output is in FASTA format with headers containing gene name, coordinates, and strand:
+The script produces a tab-delimited text file with detailed information about each guide RNA, including:
+- Contig, start, stop positions
+- Target and context sequences
+- Orientation (FWD/RVS)
+- Multiple scoring metrics (Doench 2016, Hsu 2013, etc.)
+- Off-target counts and specificity scores
+- Filtering flags (dangerous GC content, polyT stretches, etc.)
 
-```
->GENE::chromosome:start-end(strand)
-SEQUENCE
-```
+#### Default Scoring Metrics
 
-## Development/Testing
+By default, the script applies these scoring metrics:
+- `doench2016cfd`: CFD specificity score (Doench 2016)
+- `dangerous`: Flags for dangerous sequence elements (polyT, high/low GC)
+- `minot`: Minimum off-target analysis
+- `hsu2013`: MIT scoring algorithm (Hsu 2013)
+- `doench2014ontarget`: On-target scoring (Doench 2014)
 
-For local development:
+
+### 3. Select Guides: select_guides.sh
+
+The `select_guides.sh` script analyzes FlashFry output to select optimally spaced guide RNAs with high scores. It prioritizes guides by score while ensuring they maintain proper spacing for decent representation over the region of interest.
+
+#### Features
+
+- Selects guides based on Hsu 2013 metric with highest scores prioritized
+- Creates non-overlapping guide sets with customizable spacing (default at least 50 bp upstream or downstream)
+- Preserves all guide information from FlashFry
+- Generates BED files for visualization in genome browsers
+- Filters out potentially problematic guides (polyT, extreme GC content)
+- Warns about low-scoring guides that pass other criteria
+
+#### Usage
+
 ```bash
-# Using the local reference genome (not included in repository)
-./bin/get_sequence.sh -i TP53 -r data/reference/genome/hg38/hg38.fa -d 2000 -v
+./bin/select_guides.sh -i <guides.scored.txt> [options]
 ```
 
-## Troubleshooting
+#### Options
 
-### Common Issues
+- `-i, --input <file>`: Input scored guides file from FlashFry (required)
+- `-o, --output <file>`: Output selected guides file (default: output/selected_guides.txt)
+- `-z, --zone-size <bp>`: Exclusion zone radius around each guide (default: 50)
+- `-m, --min-score <score>`: Minimum acceptable Hsu score (default: 60)
+- `-v, --verbose`: Show detailed progress
+- `-h, --help`: Show this help message
 
-1. **"Error: bedtools is required but not found in PATH"**
-   - Install bedtools or ensure it's in your PATH
+#### Example
 
-2. **"Error: Ambiguous gene name"**
-   - Use the ENSEMBL ID provided in the error message instead of the gene symbol
+Select guides with default settings:
+```bash
+./bin/select_guides.sh -i output/guides.scored.txt
+```
 
-3. **"Warning: No TSS found for gene"**
-   - Verify the gene name or ID is correct
-   - Check if the gene is annotated in the GENCODE v48 reference
+Use a smaller exclusion zone for denser tiling:
+```bash
+./bin/select_guides.sh -i output/guides.scored.txt -z 25
+```
 
-## Future Features
+#### Output Files
 
-- Integration with FlashFry for guide design
-- Guide filtering based on off-target potential
-- Variant overlap analysis
-- ATAC/histone marker overlap assessment
+The script produces two main outputs:
 
-## License
+1. **Selected guides file** (text format):
+   - Full FlashFry guide information for selected guides
+   - Includes all original scoring metrics and annotations
+   - Tab-delimited format with headers from FlashFry
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+2. **BED file** (for visualization):
+   - Chromosome, start, end, guide name, score, and strand
+   - Compatible with genome browsers like IGV
+   - Guides represented by genomic coordinates
+
+#### How It Works
+
+1. Reads FlashFry output and extracts guide information
+2. Converts relative positions to absolute genomic coordinates
+3. Sorts guides by score (highest first)
+4. For each gene:
+   - Selects highest-scoring guide first
+   - Creates an exclusion zone (guide ± zone_size)
+   - Tests subsequent guides against all exclusion zones
+   - Selects non-overlapping guides in score order
+5. Generates output files with selected guides
+
+## Acknowledgments
+
+genTile relies heavily on the excellent FlashFry tool for guide RNA design and scoring. FlashFry provides the core functionality for guide identification and off-target analysis.
+
+**FlashFry Citation**:
+McKenna A, Shendure J. FlashFry: a fast and flexible tool for large-scale CRISPR target design. *BMC Biology* 16, 74 (2018). https://doi.org/10.1186/s12915-018-0545-0
+
+FlashFry is a fast, flexible, and comprehensive CRISPR target design tool that scales to analyze entire genomes. It outperforms existing tools in speed while maintaining accuracy, and offers extensive customization for various CRISPR applications. Please visit [FlashFry on GitHub](https://github.com/mckennalab/FlashFry) for more information.
 
 ## Contact
 

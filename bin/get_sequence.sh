@@ -9,22 +9,22 @@
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 REPO_DIR="$( dirname "$SCRIPT_DIR" )"
 
-# Source configuration
-source "$REPO_DIR/config/defaults.sh"
 
 # Default values
-DISTANCE=2000
-OUTPUT="/dev/stdout" # Default output to stdout
+#DISTANCE=2000 -- From when we had a fixed window from TSS and upstream.
+UPSTREAM_DISTANCE=1500   # Default bp upstream of TSS
+DOWNSTREAM_DISTANCE=500  # Default bp downstream of TSS
+OUTPUT="output/sequences.fa" # Default output to stdout
 VERBOSE=false
 
-# Display usage information
 show_usage() {
   echo "Usage: $(basename "$0") [options]"
   echo
   echo "Options:"
   echo "  -i, --input <gene|file>  Gene name/ID or file with gene names (required)"
   echo "  -r, --reference <file>   Path to reference genome FASTA (required)"
-  echo "  -d, --distance <bp>      Distance upstream of TSS (default: 2000)"
+  echo "  -u, --upstream <bp>      Distance upstream of TSS (default: $UPSTREAM_DISTANCE)"
+  echo "  -d, --downstream <bp>    Distance downstream of TSS (default: $DOWNSTREAM_DISTANCE)"
   echo "  -o, --output <file>      Output file (default: stdout)"
   echo "  -v, --verbose            Show detailed progress"
   echo "  -h, --help               Show this help message"
@@ -41,8 +41,12 @@ while [[ $# -gt 0 ]]; do
       REFERENCE="$2"
       shift 2
       ;;
-    -d|--distance)
-      DISTANCE="$2"
+    -u|--upstream)
+      UPSTREAM_DISTANCE="$2"
+      shift 2
+      ;;
+    -d|--downstream)
+      DOWNSTREAM_DISTANCE="$2"
       shift 2
       ;;
     -o|--output)
@@ -91,13 +95,11 @@ if [ ! -f "$REFERENCE" ]; then
   exit 1
 fi
 
-# Check if OUTPUT directory exists (if not stdout)
-if [ "$OUTPUT" != "/dev/stdout" ]; then
-  OUTPUT_DIR=$(dirname "$OUTPUT")
-  if [ ! -d "$OUTPUT_DIR" ]; then
-    echo "Error: Output directory does not exist: $OUTPUT_DIR"
-    exit 1
-  fi
+# # Create output directory if it doesn't exist
+OUTPUT_DIR=$(dirname "$OUTPUT")
+if [ ! -d "$OUTPUT_DIR" ]; then
+  verbose "Creating output directory: $OUTPUT_DIR"
+  mkdir -p "$OUTPUT_DIR" || { echo "Error: Failed to create output directory: $OUTPUT_DIR"; exit 1; }
 fi
 
 # Determine if input is a file or gene name
@@ -259,24 +261,30 @@ for i in "${!genes[@]}"; do
   
   # Calculate upstream region based on strand and distance
   if [ "$strand" = "+" ]; then
-    # For positive strand, upstream is before TSS
-    start=$((tss_position - DISTANCE))
-    end=$tss_position
-    
-    # Handle edge case: start cannot be negative
+    # For positive strand
+    start=$((tss_position - UPSTREAM_DISTANCE))
+    end=$((tss_position + DOWNSTREAM_DISTANCE))
+  
+  # Handle edge case: start cannot be negative
     if [ $start -lt 0 ]; then
-      verbose "Warning: Upstream region extends beyond chromosome start, truncating"
+      verbose "Warning: Region extends beyond chromosome start, truncating"
       start=1
     fi
   else
-    # For negative strand, upstream is after TSS
-    start=$tss_position
-    end=$((tss_position + DISTANCE))
-  fi
+    # For negative strand (reverse the directions)
+    start=$((tss_position - DOWNSTREAM_DISTANCE))
+    end=$((tss_position + UPSTREAM_DISTANCE))
   
+    # Handle edge case: start cannot be negative
+    if [ $start -lt 0 ]; then
+      verbose "Warning: Region extends beyond chromosome start, truncating"
+      start=1
+    fi
+  fi
+
   # Add to BED file
   echo -e "$chromosome\t$start\t$end\t$gene\t0\t$strand" >> "$TMP_BED"
-  verbose "Added region: $chromosome:$start-$end"
+  verbose "Added region: $chromosome:$start-$end (${UPSTREAM_DISTANCE}bp upstream, ${DOWNSTREAM_DISTANCE}bp downstream of TSS)"
 done
 
 # Check if we have any regions
