@@ -1,0 +1,17 @@
+cell_type	short_name	description	accession_ID	IDR_ID	download_url
+CD14-positive monocyte	CD14_monocyte	Primary immune cells that differentiate into macrophages and dendritic cells	ENCSR000CKW	ENCFF173LDN	https://www.encodeproject.org/files/ENCFF173LDN/@@download/ENCFF173LDN.bed.gz
+HeLa-S3	HeLa	Cervical cancer cell line	ENCSR000CJJ	ENCFF976HUN	https://www.encodeproject.org/files/ENCFF976HUN/@@download/ENCFF976HUN.bed.gz
+H1	H1	Human embryonic stem cell line	ENCSR000CJB	ENCFF038OTF	https://www.encodeproject.org/files/ENCFF038OTF/@@download/ENCFF038OTF.bed.gz
+SK-N-SH	SK-N-SH	Neuroblastoma cell line with neuronal characteristics	ENCSR000CLC	ENCFF251ABO	https://www.encodeproject.org/files/ENCFF251ABO/@@download/ENCFF251ABO.bed.gz
+skeletal muscle satellite cell	muscle_satellite	Adult stem cells responsible for muscle repair and growth	ENCSR000CLD	ENCFF404TRC	https://www.encodeproject.org/files/ENCFF404TRC/@@download/ENCFF404TRC.bed.gz
+GM12878	GM12878	B-lymphoblastoid cell line ENCODE reference cell line	ENCSR000CKA	ENCFF853HOH	https://www.encodeproject.org/files/ENCFF853HOH/@@download/ENCFF853HOH.bed.gz
+fibroblast of dermis	dermal_fibroblast	Primary skin connective tissue cells	ENCSR000CKX	ENCFF087XOE	https://www.encodeproject.org/files/ENCFF087XOE/@@download/ENCFF087XOE.bed.gz
+fibroblast of villous mesenchyme	villous_fibroblast	Primary placental connective tissue cells	ENCSR000CKP	ENCFF744XVE	https://www.encodeproject.org/files/ENCFF744XVE/@@download/ENCFF744XVE.bed.gz
+IMR-90	IMR90	Normal human lung fibroblast cell line	ENCSR000CKT	ENCFF604ZAF	https://www.encodeproject.org/files/ENCFF604ZAF/@@download/ENCFF604ZAF.bed.gz
+osteoblast	osteoblast	Bone-forming cells	ENCSR000CKK	ENCFF017ITR	https://www.encodeproject.org/files/ENCFF017ITR/@@download/ENCFF017ITR.bed.gz
+HepG2	HepG2	Hepatocellular carcinoma cell line liver cancer	ENCSR000CJM	ENCFF246WDH	https://www.encodeproject.org/files/ENCFF246WDH/@@download/ENCFF246WDH.bed.gz
+K562	K562	Chronic myelogenous leukemia cell line ENCODE reference	ENCSR000CJN	ENCFF698DQS	https://www.encodeproject.org/files/ENCFF698DQS/@@download/ENCFF698DQS.bed.gz
+keratinocyte	keratinocyte	Primary skin barrier cells	ENCSR000CJP	ENCFF260MFS	https://www.encodeproject.org/files/ENCFF260MFS/@@download/ENCFF260MFS.bed.gz
+AG04450	AG04450	Normal human lung fibroblast cell line	ENCSR000CJW	ENCFF299BVA	https://www.encodeproject.org/files/ENCFF299BVA/@@download/ENCFF299BVA.bed.gz
+endothelial cell of umbilical vein	HUVEC	Primary vascular endothelial cells from umbilical cord	ENCSR000CJF	ENCFF279LLF	https://www.encodeproject.org/files/ENCFF279LLF/@@download/ENCFF279LLF.bed.gz
+B cell	B_cell	Primary immune cells that produce antibodies	ENCSR000CKD	ENCFF621TDC	https://www.encodeproject.org/files/ENCFF621TDC/@@download/ENCFF621TDC.bed.gz

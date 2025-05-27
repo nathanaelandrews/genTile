@@ -37,3 +37,6 @@ output/*
 !output/.gitkeep
 test/output/*
 !test/output/.gitkeep
+
+#Data from CAGE
+data/reference/CAGE_cache/*

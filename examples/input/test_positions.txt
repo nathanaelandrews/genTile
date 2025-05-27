@@ -1,0 +1,2 @@
+tp53_region,chr17:7687546,-
+brca1_region,chr17:43170245,-
