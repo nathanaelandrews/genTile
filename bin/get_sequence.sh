@@ -14,10 +14,15 @@ DOWNSTREAM_DISTANCE=500  # Default bp downstream of TSS
 OUTPUT="output/sequences.fa" # Default output
 VERBOSE=false
 
+# Initialize counters for TSS sources
+CAGE_COUNT=0
+APPRIS_COUNT=0
+GENCODE_COUNT=0
+
 show_usage() {
   echo "Usage: $(basename "$0") (-g <genes> | -p <positions>) -r <genome> (-c <cell_line> | -G) [options]"
   echo
-  echo "Extract genomic sequences around TSS using CAGE data or Gencode annotations."
+  echo "Extract genomic sequences around TSS using CAGE data or APPRIS/Gencode annotations."
   echo
   echo "Input Options (choose one):"
   echo "  -g, --genes <file>       Gene names/IDs file (one gene per line)"
@@ -25,7 +30,7 @@ show_usage() {
   echo
   echo "TSS Source Options (required for gene mode):"
   echo "  -c, --cell-line <name>   Use CAGE data for specified cell line"
-  echo "  -G, --gencode-only       Force use of Gencode TSS (not recommended)"
+  echo "  -G, --gencode-only       Force use of APPRIS/Gencode TSS (not recommended)"
   echo
   echo "Required Options:"
   echo "  -r, --reference <file>   Path to reference genome FASTA"
@@ -41,7 +46,7 @@ show_usage() {
   echo "  # Use CAGE data for K562 cell line"
   echo "  $(basename "$0") -g genes.txt -r hg38.fa -c K562"
   echo
-  echo "  # Use Gencode TSS (not recommended)"
+  echo "  # Use APPRIS/Gencode TSS (not recommended)"
   echo "  $(basename "$0") -g genes.txt -r hg38.fa -G"
   echo
   echo "  # Use custom positions"
@@ -146,7 +151,7 @@ if [ -n "$GENES_FILE" ]; then
   if [ -z "$CELL_LINE" ] && [ "$GENCODE_ONLY" != true ]; then
     echo "Error: For gene mode, you must specify either:"
     echo "  -c <cell_line>  (recommended: use CAGE data)"
-    echo "  -G              (use Gencode TSS, not recommended)"
+    echo "  -G              (use APPRIS/Gencode TSS, not recommended)"
     show_usage
     exit 1
   fi
@@ -200,7 +205,7 @@ fi
 
 # Show warning for Gencode-only mode
 if [ "$GENCODE_ONLY" = true ]; then
-  echo "Warning: Using Gencode TSS instead of CAGE data is not recommended." >&2
+  echo "Warning: Using APPRIS/Gencode TSS instead of CAGE data is not recommended." >&2
   echo "         CAGE data provides more accurate cell-type-specific TSS positions." >&2
 fi
 
@@ -212,7 +217,7 @@ if [ ! -d "$OUTPUT_DIR" ]; then
 fi
 
 # Set paths for TSS lookup
-TSS_FILE="$REPO_DIR/data/reference/gene_annotations/gencode.v47.annotation.tsv"
+APPRIS_TSS_FILE="$REPO_DIR/data/reference/gene_annotations/gencode.v47.annotation.tsv"
 GET_TSS_SCRIPT="$REPO_DIR/bin/lib/get_TSS.sh"
 
 # Create temporary files
@@ -227,9 +232,9 @@ verbose "Created temporary directory: $TMP_DIR"
 # Add output header with mode information
 if [ "$INPUT_TYPE" = "genes" ]; then
   if [ -n "$CELL_LINE" ]; then
-    echo "# Sequences extracted using CAGE data from cell line: $CELL_LINE" >> "$OUTPUT"
+    echo "# Sequences extracted using CAGE data (with APPRIS/Gencode fallback) from cell line: $CELL_LINE" >> "$OUTPUT"
   else
-    echo "# Sequences extracted using Gencode TSS annotations" >> "$OUTPUT"
+    echo "# Sequences extracted using APPRIS/Gencode TSS annotations" >> "$OUTPUT"
   fi
 else
   echo "# Sequences extracted from custom positions" >> "$OUTPUT"
@@ -258,20 +263,20 @@ if [ "$INPUT_TYPE" = "genes" ]; then
     
     # Get TSS coordinates
     if [ -n "$CELL_LINE" ]; then
-      # Use CAGE data
-      TSS_COORDS=$("$GET_TSS_SCRIPT" "$gene" "$CELL_LINE" 2>/dev/null)
+      # Use CAGE data with APPRIS/Gencode fallback
+      TSS_COORDS_WITH_SOURCE=$("$GET_TSS_SCRIPT" "$gene" "$CELL_LINE" 2>/dev/null)
     else
-      # Use Gencode TSS (fallback mode)
-      verbose "Looking up Gencode TSS for: $gene"
+      # Use APPRIS/Gencode TSS (fallback mode)
+      verbose "Looking up APPRIS/Gencode TSS for: $gene"
       
       # First check for duplicates if this is a gene symbol
       if [[ ! "$gene" =~ ^ENSG[0-9]+ ]]; then
         # This is a gene symbol, check for duplicates
-        DUPLICATE_COUNT=$(awk -F'\t' -v gene="$gene" 'NR > 1 && $8 == gene' "$TSS_FILE" | wc -l)
+        DUPLICATE_COUNT=$(awk -F'\t' -v gene="$gene" 'NR > 1 && $8 == gene' "$APPRIS_TSS_FILE" | wc -l)
         if [ "$DUPLICATE_COUNT" -gt 1 ]; then
           echo "Error: Ambiguous gene name: $gene" >&2
           echo "This gene name is associated with multiple ENSEMBL IDs:" >&2
-          awk -F'\t' -v gene="$gene" 'NR > 1 && $8 == gene {print "  - " $6 " (" $1 ":" $2 " " $5 " " $7 ")"}' "$TSS_FILE" >&2
+          awk -F'\t' -v gene="$gene" 'NR > 1 && $8 == gene {print "  - " $6 " (" $1 ":" $2 " " $5 " " $7 ")"}' "$APPRIS_TSS_FILE" >&2
           echo "Please use a specific ENSEMBL ID instead to avoid ambiguity." >&2
           continue
         fi
@@ -280,36 +285,53 @@ if [ "$INPUT_TYPE" = "genes" ]; then
       # Perform lookup based on gene type
       if [[ "$gene" =~ ^ENSG[0-9]+ ]]; then
         # Search by ENSEMBL ID (gene_id column)
-        TSS_LOOKUP=$(awk -F'\t' -v gene="$gene" 'NR > 1 && $6 == gene {print $1 ":" $2 ":" $5; exit}' "$TSS_FILE")
+        TSS_LOOKUP=$(awk -F'\t' -v gene="$gene" 'NR > 1 && $6 == gene {print $1 ":" $2 ":" $5 ":" $11; exit}' "$APPRIS_TSS_FILE")
       else
         # Search by gene symbol (gene_name column)
-        TSS_LOOKUP=$(awk -F'\t' -v gene="$gene" 'NR > 1 && $8 == gene {print $1 ":" $2 ":" $5; exit}' "$TSS_FILE")
+        TSS_LOOKUP=$(awk -F'\t' -v gene="$gene" 'NR > 1 && $8 == gene {print $1 ":" $2 ":" $5 ":" $11; exit}' "$APPRIS_TSS_FILE")
       fi
       
       if [ -n "$TSS_LOOKUP" ]; then
-        TSS_COORDS="$TSS_LOOKUP"
+        TSS_COORDS_WITH_SOURCE="$TSS_LOOKUP"
       else
         echo "Warning: Gene not found: $gene" >&2
         continue
       fi
     fi
     
-    if [ -z "$TSS_COORDS" ]; then
+    if [ -z "$TSS_COORDS_WITH_SOURCE" ]; then
       echo "Warning: Failed to get TSS coordinates for: $gene" >&2
       continue
     fi
     
-    # Parse TSS coordinates (format: chr:position:strand)
-    chromosome=$(echo "$TSS_COORDS" | cut -d: -f1)
-    tss_position=$(echo "$TSS_COORDS" | cut -d: -f2)
-    strand=$(echo "$TSS_COORDS" | cut -d: -f3)
+    # Parse TSS coordinates (format: chr:position:strand:source)
+    chromosome=$(echo "$TSS_COORDS_WITH_SOURCE" | cut -d: -f1)
+    tss_position=$(echo "$TSS_COORDS_WITH_SOURCE" | cut -d: -f2)
+    strand=$(echo "$TSS_COORDS_WITH_SOURCE" | cut -d: -f3)
+    tss_source=$(echo "$TSS_COORDS_WITH_SOURCE" | cut -d: -f4)
     
-    if [ -z "$chromosome" ] || [ -z "$tss_position" ] || [ -z "$strand" ]; then
-      echo "Warning: Invalid TSS coordinates for $gene: $TSS_COORDS" >&2
+    if [ -z "$chromosome" ] || [ -z "$tss_position" ] || [ -z "$strand" ] || [ -z "$tss_source" ]; then
+      echo "Warning: Invalid TSS coordinates for $gene: $TSS_COORDS_WITH_SOURCE" >&2
       continue
     fi
     
-    verbose "Found TSS: $chromosome:$tss_position ($strand)"
+    # Update counters based on TSS source
+    case "$tss_source" in
+      "CAGE")
+        CAGE_COUNT=$((CAGE_COUNT + 1))
+        ;;
+      "APPRIS")
+        APPRIS_COUNT=$((APPRIS_COUNT + 1))
+        ;;
+      "GENCODE")
+        GENCODE_COUNT=$((GENCODE_COUNT + 1))
+        ;;
+      *)
+        echo "Warning: Unknown TSS source '$tss_source' for gene $gene" >&2
+        ;;
+    esac
+    
+    verbose "Found TSS: $chromosome:$tss_position ($strand) from $tss_source"
     
     # Calculate region based on strand and distances
     if [ "$strand" = "+" ]; then
@@ -330,7 +352,7 @@ if [ "$INPUT_TYPE" = "genes" ]; then
     
     # Add to BED file with TSS information in the name
     echo -e "$chromosome\t$start\t$end\t$gene\t0\t$strand\t$tss_position" >> "$TMP_BED"
-    verbose "Added region: $chromosome:$start-$end (TSS at $tss_position, strand $strand)"
+    verbose "Added region: $chromosome:$start-$end (TSS at $tss_position, strand $strand, source: $tss_source)"
     
   done < "$INPUT_FILE"
   
@@ -446,13 +468,35 @@ while IFS= read -r line; do
 done < "$TMP_FASTA"
 
 # Count sequences
-#SEQ_COUNT=$(grep -c "^>" "$OUTPUT" | tail -n +4)  # Skip header comments
 SEQ_COUNT=$(grep -c "^>" "$OUTPUT")
 verbose "Extracted $SEQ_COUNT sequences"
 
 # Clean up temporary files
 rm -rf "$TMP_DIR"
 verbose "Cleaned up temporary files"
+
+# Display TSS source summary and warnings for gene mode
+if [ "$INPUT_TYPE" = "genes" ]; then
+  echo ""
+  echo "TSS source summary:"
+  if [ $CAGE_COUNT -gt 0 ]; then
+    echo "  CAGE data: $CAGE_COUNT genes"
+  fi
+  if [ $APPRIS_COUNT -gt 0 ]; then
+    echo "  APPRIS: $APPRIS_COUNT genes"
+    if [ -n "$CELL_LINE" ]; then
+      echo "Warning: $APPRIS_COUNT genes used APPRIS TSS instead of CAGE data." >&2
+      echo "         These may not reflect cell-type-specific transcription initiation sites." >&2
+    fi
+  fi
+  if [ $GENCODE_COUNT -gt 0 ]; then
+    echo "  GENCODE: $GENCODE_COUNT genes"
+    echo "Warning: $GENCODE_COUNT genes used GENCODE TSS annotations." >&2
+    echo "         These annotations are suboptimal for CRISPR guide design." >&2
+    echo "         Manual curation of TSS positions is recommended." >&2
+  fi
+  echo ""
+fi
 
 echo "Successfully extracted sequences for $SEQ_COUNT entries"
 verbose "Output written to: $OUTPUT"
