@@ -18,6 +18,7 @@ ZONE_SIZE="$DEFAULT_ZONE_SIZE"
 SCORE_METRIC="$DEFAULT_SCORE_METRIC"
 SCORE_CUTOFF=""
 TARGET_GUIDES="$DEFAULT_TARGET_GUIDES"
+RESTRICTION_ENZYMES=""
 VERBOSE=false
 
 # Mode flags
@@ -46,6 +47,7 @@ show_usage() {
   echo "                           Options: Hsu2013, doench2016cfd"
   echo "  -c, --score-cutoff <score>   Minimum score threshold (default: auto-set based on metric)"
   echo "  -z, --zone-size <bp>     Exclusion zone radius for tiling mode (default: $DEFAULT_ZONE_SIZE)"
+  echo "  -R, --restriction-enzymes <list>  Filter out guides with restriction sites (comma-separated)"
   echo "  -v, --verbose            Show detailed progress"
   echo "  -h, --help               Show this help message"
   echo
@@ -68,6 +70,10 @@ show_usage() {
   echo
   echo "  # All modes with custom scoring"
   echo "  $(basename "$0") -f guides.scored.txt -t -i -a -m doench2016cfd -c 0.7"
+  echo
+  echo "  # Filter restriction enzymes"
+  echo "  $(basename "$0") -f guides.scored.txt -t -R BsaI"
+  echo "  $(basename "$0") -f guides.scored.txt -t -R BsaI,BsmBI,EcoRI"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -78,6 +84,7 @@ while [[ $# -gt 0 ]]; do
     -m|--score-metric) SCORE_METRIC="$2"; shift 2 ;;
     -c|--score-cutoff) SCORE_CUTOFF="$2"; shift 2 ;;
     -z|--zone-size) ZONE_SIZE="$2"; shift 2 ;;
+    -R|--restriction-enzymes) RESTRICTION_ENZYMES="$2"; shift 2 ;;
     -t|--include-tiling) INCLUDE_TILING=true; shift ;;
     -i|--include-crispri) INCLUDE_CRISPRI=true; shift ;;
     -a|--include-crispra) INCLUDE_CRISPRA=true; shift ;;
@@ -133,6 +140,10 @@ if ! command -v bedtools &> /dev/null; then
   exit 1
 fi
 
+# Set up paths
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+FILTER_SCRIPT="$SCRIPT_DIR/lib/filter_restriction_sites.sh"
+
 # Define output files
 FULL_OUTPUT="$OUTPUT"
 IGV_BED_OUTPUT="${OUTPUT%.*}.bed"
@@ -146,14 +157,47 @@ verbose "  Modes: Tiling=$INCLUDE_TILING, CRISPRi=$INCLUDE_CRISPRI, CRISPRa=$INC
 if [ "$INCLUDE_CRISPRI" = true ] || [ "$INCLUDE_CRISPRA" = true ]; then
   verbose "  Target guides for CRISPRi/a: $TARGET_GUIDES"
 fi
+if [ -n "$RESTRICTION_ENZYMES" ]; then
+  verbose "  Restriction enzyme filtering: $RESTRICTION_ENZYMES"
+fi
 
 # Create temporary directory
 TMP_DIR=$(mktemp -d)
 verbose "Created temporary directory: $TMP_DIR"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
+# Step 1: Apply restriction enzyme filtering if requested
+WORKING_INPUT="$INPUT"
+if [ -n "$RESTRICTION_ENZYMES" ]; then
+  verbose "Applying restriction enzyme filtering for: $RESTRICTION_ENZYMES"
+  
+  # Check if filter script exists
+  if [ ! -f "$FILTER_SCRIPT" ]; then
+    echo "Error: Restriction enzyme filter script not found: $FILTER_SCRIPT"
+    exit 1
+  fi
+  
+  # Apply filtering and save to temporary file
+  FILTERED_INPUT="$TMP_DIR/filtered_guides.txt"
+  if [ "$VERBOSE" = true ]; then
+    "$FILTER_SCRIPT" "$INPUT" "$RESTRICTION_ENZYMES" --verbose > "$FILTERED_INPUT"
+  else
+    "$FILTER_SCRIPT" "$INPUT" "$RESTRICTION_ENZYMES" > "$FILTERED_INPUT" 2>/dev/null
+  fi
+  
+  # Check if filtering was successful
+  if [ $? -ne 0 ]; then
+    echo "Error: Restriction enzyme filtering failed"
+    exit 1
+  fi
+  
+  # Use filtered input for rest of pipeline
+  WORKING_INPUT="$FILTERED_INPUT"
+  verbose "Restriction enzyme filtering complete"
+fi
+
 # Extract header and find column indices
-HEADER=$(head -n 1 "$INPUT")
+HEADER=$(head -n 1 "$WORKING_INPUT")
 
 # Find required columns
 SCORE_COL=$(echo "$HEADER" | tr '\t' '\n' | grep -n "^${SCORE_METRIC}$" | cut -d: -f1)
@@ -227,7 +271,7 @@ awk -F'\t' -v score_col="$SCORE_COL" -v gc_col="$DANGEROUS_GC_COL" -v polyt_col=
     # Output guide information
     print guide_id, target_name, chr, abs_start, abs_end, region_strand, orientation, $score_col, tss_relative_pos, rel_start, rel_end, $0;
   }
-' "$INPUT" > "$TMP_DIR/processed_guides.txt"
+' "$WORKING_INPUT" > "$TMP_DIR/processed_guides.txt"
 
 # Check if any guides passed filtering
 if [ ! -s "$TMP_DIR/processed_guides.txt" ]; then
@@ -371,7 +415,7 @@ fi
 verbose "Creating output files..."
 
 # Create header for full output (add guide_id as first column, keep original header)
-ORIGINAL_HEADER=$(head -n 1 "$INPUT")
+ORIGINAL_HEADER=$(head -n 1 "$WORKING_INPUT")
 echo -e "guide_id\t${ORIGINAL_HEADER}\ttiling_guide\tcrispri_guide\tcrispra_guide" > "$FULL_OUTPUT"
 
 # Add selected guides to output (add guide_id as first column, keep all original FlashFry data + boolean flags)
