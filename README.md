@@ -63,8 +63,8 @@ Here's a complete example workflow using the example gene list for multi-modal g
 # Step 2: Design guides using FlashFry
 ./bin/design_guides.sh -i output/sequences.fa -v
 
-# Step 3: Select guides for all three modes (tiling, CRISPRi, CRISPRa)
-./bin/select_guides.sh -f output/guides.scored.txt -t -i -a -v
+# Step 3: Select guides for all three modes with filtering
+./bin/select_guides.sh -f output/guides.scored.txt -t -i -a -R BsaI -v
 
 # Results will be in:
 # - output/selected_guides.txt (Full guide details with mode flags)
@@ -88,6 +88,41 @@ Here's a complete example workflow using the example gene list for multi-modal g
 
 # Steps 2-3: Same as above
 ```
+
+## Advanced Filtering Options
+
+genTile supports advanced filtering to remove guides with potential issues for cloning and cell line compatibility:
+
+### Restriction Enzyme Filtering
+
+Filter out guides containing restriction sites that would interfere with cloning workflows:
+
+```bash
+# Filter guides with BsaI sites (Golden Gate assembly)
+./bin/select_guides.sh -f guides.scored.txt -t -R BsaI
+
+# Filter multiple enzymes
+./bin/select_guides.sh -f guides.scored.txt -t -R BsaI,BsmBI,EcoRI
+
+# Search available enzymes
+./bin/list_enzymes.sh bsa                    # Find enzymes containing 'bsa'
+./bin/list_enzymes.sh --sequences            # Show all enzymes with sequences
+./bin/list_enzymes.sh                        # Show all available enzymes
+```
+
+### Genomic Variant Filtering
+
+Filter out guides overlapping known genomic variants in your cell line:
+
+```bash
+# Filter using cell-line specific variants (user must provide BED file)
+./bin/select_guides.sh -f guides.scored.txt -t -V data/personal/K562_variants.bed.gz
+
+# Combined filtering for comprehensive guide selection
+./bin/select_guides.sh -f guides.scored.txt -t -i -a -R BsaI -V variants.bed
+```
+
+**Note**: Variant filtering requires a user-prepared BED file of variant positions. See [Variant Filtering Setup](#variant-filtering-setup) below.
 
 ## Usage
 
@@ -263,12 +298,13 @@ By default, the script applies these scoring metrics:
 
 ### 3. Select Guides: select_guides.sh
 
-The `select_guides.sh` script analyzes FlashFry output to select guides for different CRISPR applications. It supports three modes: tiling (spaced guides across regions), CRISPRi (TSS-proximal interference), and CRISPRa (TSS-upstream activation).
+The `select_guides.sh` script analyzes FlashFry output to select guides for different CRISPR applications. It supports three modes: tiling (spaced guides across regions), CRISPRi (TSS-proximal interference), and CRISPRa (TSS-upstream activation), with advanced filtering options for cloning compatibility and cell-line specificity.
 
 #### Features
 
 - **Multi-modal selection**: Tiling, CRISPRi, and CRISPRa modes with application-specific positioning
 - **TSS-relative positioning**: CRISPRi targets -50 to +300bp from TSS, CRISPRa targets -400 to -50bp
+- **Advanced filtering**: Remove guides with restriction sites or genomic variants
 - **Flexible scoring**: Supports multiple scoring metrics (currently Hsu2013 working)
 - **Guide deduplication**: Guides selected by multiple modes appear once with boolean flags
 - **Quality filtering**: Excludes guides with problematic sequences (polyT, extreme GC content)
@@ -277,7 +313,7 @@ The `select_guides.sh` script analyzes FlashFry output to select guides for diff
 #### Usage
 
 ```bash
-./bin/select_guides.sh -f <guides.scored.txt> [mode_options] [other_options]
+./bin/select_guides.sh -f <guides.scored.txt> [mode_options] [filtering_options] [other_options]
 ```
 
 #### Mode Selection (Required)
@@ -287,7 +323,19 @@ You must specify at least one mode:
 - `-i, --crispri`: Select guides for CRISPRi knockdown experiments
 - `-a, --crispra`: Select guides for CRISPRa activation experiments
 
-#### Options
+#### Filtering Options
+
+**Restriction Enzyme Filtering:**
+- `-R, --restriction-enzymes <list>`: Filter guides containing restriction sites (comma-separated)
+  - Example: `-R BsaI` or `-R BsaI,BsmBI,EcoRI`
+  - Useful for Golden Gate assembly and cloning workflows
+
+**Variant Filtering:**
+- `-V, --filter-variants <bed>`: Filter guides overlapping genomic variants (BED file)
+  - Requires user-provided BED file of variant positions
+  - Conservative filtering: any overlap removes the guide
+
+#### Other Options
 
 **Input/Output:**
 - `-f, --input <file>`: Input scored guides file from FlashFry (required)
@@ -296,7 +344,7 @@ You must specify at least one mode:
 **Scoring Options:**
 - `-m, --score-metric <metric>`: Scoring metric to use (default: hsu2013)
   - Options: hsu2013, doench2016cfd (others currently not working)
-- `-c, --score-cutoff <score>`: Minimum acceptable score (default: 60 for hsu2013)
+- `-c, --score-cutoff <score>`: Minimum acceptable score (default: 80 for hsu2013)
 
 **Tiling-Specific Options:**
 - `-z, --zone-size <bp>`: Exclusion zone radius around each guide (default: 50)
@@ -315,19 +363,19 @@ You must specify at least one mode:
 ./bin/select_guides.sh -f output/guides.scored.txt -t
 ```
 
-**CRISPRi mode only:**
+**CRISPRi mode with restriction enzyme filtering:**
 ```bash
-./bin/select_guides.sh -f output/guides.scored.txt -i -n 3
+./bin/select_guides.sh -f output/guides.scored.txt -i -n 3 -R BsaI
 ```
 
-**All three modes:**
+**All three modes with comprehensive filtering:**
 ```bash
-./bin/select_guides.sh -f output/guides.scored.txt -t -i -a -z 25 -n 4
+./bin/select_guides.sh -f output/guides.scored.txt -t -i -a -R BsaI,BsmBI -V variants.bed.gz
 ```
 
-**Custom scoring:**
+**Custom scoring and parameters:**
 ```bash
-./bin/select_guides.sh -f output/guides.scored.txt -t -m doench2016cfd -c 0.5
+./bin/select_guides.sh -f output/guides.scored.txt -t -m doench2016cfd -c 0.5 -z 25
 ```
 
 #### Output Files
@@ -367,10 +415,68 @@ The script produces two main outputs:
 #### How Multi-Mode Selection Works
 
 1. Reads FlashFry output and parses TSS information from FASTA headers
-2. Calculates TSS-relative positions for each guide
-3. Applies mode-specific filtering and selection
-4. Combines results with boolean flags indicating selection mode(s)
-5. Generates deduplicated output with mode annotations
+2. Applies restriction enzyme filtering (if specified)
+3. Calculates TSS-relative positions for each guide
+4. Applies variant filtering (if specified)
+5. Applies mode-specific filtering and selection
+6. Combines results with boolean flags indicating selection mode(s)
+7. Generates deduplicated output with mode annotations
+
+## Variant Filtering Setup
+
+For cell-line specific variant filtering, you need to prepare a BED file of variant positions:
+
+### From VCF Files
+
+If you have VCF files (e.g., from ENCODE), convert to BED format:
+
+```bash
+# Extract variants and convert to BED
+bcftools query -f '%CHROM\t%POS0\t%END\t%REF>%ALT\n' variants.vcf.gz > variants.bed
+
+# Sort and compress
+sort -k1,1 -k2,2n variants.bed > variants_sorted.bed
+bgzip variants_sorted.bed
+tabix -p bed variants_sorted.bed.gz
+```
+
+### Coordinate Systems
+
+Ensure your variant BED file uses the same reference genome as your guides:
+- **hg19 → hg38**: Use UCSC liftOver or CrossMap for coordinate conversion
+- **Chromosome naming**: Ensure consistent format (chr1 vs 1)
+
+### Usage
+
+```bash
+# Use compressed or uncompressed BED files
+./bin/select_guides.sh -f guides.scored.txt -t -V data/personal/variants.bed.gz
+```
+
+The filtering is conservative: any guide overlapping any variant position will be removed.
+
+## Utility Scripts
+
+### List Available Restriction Enzymes
+
+Use `list_enzymes.sh` to browse the restriction enzyme database:
+
+```bash
+# Search for specific enzymes (case-insensitive)
+./bin/list_enzymes.sh bsa
+./bin/list_enzymes.sh eco
+
+# Show all enzymes in columns
+./bin/list_enzymes.sh
+
+# Show with recognition sequences
+./bin/list_enzymes.sh bsa --sequences
+
+# Show with commercial sources
+./bin/list_enzymes.sh --sources
+```
+
+The database contains 584+ commercially available restriction enzymes with IUPAC ambiguous bases preserved for accurate filtering.
 
 ## Acknowledgments
 
