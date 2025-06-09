@@ -40,3 +40,6 @@ test/output/*
 
 #Data from CAGE
 data/reference/CAGE_cache/*
+
+#VCF data folder
+data/reference/vcf/

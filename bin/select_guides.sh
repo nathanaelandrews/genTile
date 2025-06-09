@@ -19,6 +19,7 @@ SCORE_METRIC="$DEFAULT_SCORE_METRIC"
 SCORE_CUTOFF=""
 TARGET_GUIDES="$DEFAULT_TARGET_GUIDES"
 RESTRICTION_ENZYMES=""
+VARIANTS_BED=""
 VERBOSE=false
 
 # Mode flags
@@ -48,6 +49,7 @@ show_usage() {
   echo "  -c, --score-cutoff <score>   Minimum score threshold (default: auto-set based on metric)"
   echo "  -z, --zone-size <bp>     Exclusion zone radius for tiling mode (default: $DEFAULT_ZONE_SIZE)"
   echo "  -R, --restriction-enzymes <list>  Filter out guides with restriction sites (comma-separated)"
+  echo "  -V, --filter-variants <bed>  Filter out guides overlapping variants (BED file)"
   echo "  -v, --verbose            Show detailed progress"
   echo "  -h, --help               Show this help message"
   echo
@@ -74,6 +76,9 @@ show_usage() {
   echo "  # Filter restriction enzymes"
   echo "  $(basename "$0") -f guides.scored.txt -t -R BsaI"
   echo "  $(basename "$0") -f guides.scored.txt -t -R BsaI,BsmBI,EcoRI"
+  echo
+  echo "  # Filter variants (K562 example)"
+  echo "  $(basename "$0") -f guides.scored.txt -t -V data/personal/K562_variants.bed.gz"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -85,6 +90,7 @@ while [[ $# -gt 0 ]]; do
     -c|--score-cutoff) SCORE_CUTOFF="$2"; shift 2 ;;
     -z|--zone-size) ZONE_SIZE="$2"; shift 2 ;;
     -R|--restriction-enzymes) RESTRICTION_ENZYMES="$2"; shift 2 ;;
+    -V|--filter-variants) VARIANTS_BED="$2"; shift 2 ;;
     -t|--include-tiling) INCLUDE_TILING=true; shift ;;
     -i|--include-crispri) INCLUDE_CRISPRI=true; shift ;;
     -a|--include-crispra) INCLUDE_CRISPRA=true; shift ;;
@@ -143,6 +149,7 @@ fi
 # Set up paths
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 FILTER_SCRIPT="$SCRIPT_DIR/lib/filter_restriction_sites.sh"
+VARIANTS_SCRIPT="$SCRIPT_DIR/lib/filter_variants.sh"
 
 # Define output files
 FULL_OUTPUT="$OUTPUT"
@@ -159,6 +166,9 @@ if [ "$INCLUDE_CRISPRI" = true ] || [ "$INCLUDE_CRISPRA" = true ]; then
 fi
 if [ -n "$RESTRICTION_ENZYMES" ]; then
   verbose "  Restriction enzyme filtering: $RESTRICTION_ENZYMES"
+fi
+if [ -n "$VARIANTS_BED" ]; then
+  verbose "  Variant filtering: $VARIANTS_BED"
 fi
 
 # Create temporary directory
@@ -273,17 +283,53 @@ awk -F'\t' -v score_col="$SCORE_COL" -v gc_col="$DANGEROUS_GC_COL" -v polyt_col=
   }
 ' "$WORKING_INPUT" > "$TMP_DIR/processed_guides.txt"
 
+# Step 2: Apply variant filtering if requested
+WORKING_GUIDES="$TMP_DIR/processed_guides.txt"
+if [ -n "$VARIANTS_BED" ]; then
+  verbose "Applying variant filtering using: $VARIANTS_BED"
+  
+  # Check if variants script exists
+  if [ ! -f "$VARIANTS_SCRIPT" ]; then
+    echo "Error: Variant filter script not found: $VARIANTS_SCRIPT"
+    exit 1
+  fi
+  
+  # Check if variants BED file exists
+  if [ ! -f "$VARIANTS_BED" ]; then
+    echo "Error: Variants BED file not found: $VARIANTS_BED"
+    exit 1
+  fi
+  
+  # Apply variant filtering and save to temporary file
+  FILTERED_GUIDES="$TMP_DIR/variant_filtered_guides.txt"
+  if [ "$VERBOSE" = true ]; then
+    "$VARIANTS_SCRIPT" "$WORKING_GUIDES" "$VARIANTS_BED" --verbose > "$FILTERED_GUIDES"
+  else
+    "$VARIANTS_SCRIPT" "$WORKING_GUIDES" "$VARIANTS_BED" > "$FILTERED_GUIDES" 2>/dev/null
+  fi
+  
+  # Check if filtering was successful
+  if [ $? -ne 0 ]; then
+    echo "Error: Variant filtering failed"
+    exit 1
+  fi
+  
+  # Use variant-filtered guides for rest of pipeline
+  WORKING_GUIDES="$FILTERED_GUIDES"
+  verbose "Variant filtering complete"
+fi
+
 # Check if any guides passed filtering
-if [ ! -s "$TMP_DIR/processed_guides.txt" ]; then
+if [ ! -s "$WORKING_GUIDES" ]; then
   echo "Error: No guides found matching the filtering criteria (score >= $SCORE_CUTOFF)"
   exit 1
 fi
 
-TOTAL_GUIDES=$(wc -l < "$TMP_DIR/processed_guides.txt")
+TOTAL_GUIDES=$(wc -l < "$WORKING_GUIDES")
 verbose "Found $TOTAL_GUIDES guides passing filters"
 
 # Get list of unique targets
-awk '{print $2}' "$TMP_DIR/processed_guides.txt" | sort | uniq > "$TMP_DIR/target_names.txt"
+awk '{print $2}' "$WORKING_GUIDES" | sort | uniq > "$TMP_DIR/target_names.txt"
 TARGET_COUNT=$(wc -l < "$TMP_DIR/target_names.txt")
 verbose "Processing $TARGET_COUNT unique targets"
 
@@ -295,7 +341,7 @@ while read -r TARGET; do
   verbose "Processing target: $TARGET"
   
   # Extract guides for this target
-  awk -v target="$TARGET" '$2 == target' "$TMP_DIR/processed_guides.txt" > "$TMP_DIR/${TARGET}_guides.txt"
+  awk -v target="$TARGET" '$2 == target' "$WORKING_GUIDES" > "$TMP_DIR/${TARGET}_guides.txt"
   
   TARGET_GUIDE_COUNT=$(wc -l < "$TMP_DIR/${TARGET}_guides.txt")
   verbose "  Found $TARGET_GUIDE_COUNT guides for $TARGET"
